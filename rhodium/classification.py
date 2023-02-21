@@ -15,9 +15,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with Rhodium.  If not, see <http://www.gnu.org/licenses/>.
+from __future__ import division, print_function, absolute_import
+
+import six
 import pydot
 import operator
 import functools
+import itertools
 import numpy as np
 import numpy.lib.recfunctions as rf
 import pandas as pd
@@ -64,7 +68,7 @@ class Cart(object):
             the names of variables excluded from the PRIM analysis
         """
         super(Cart, self).__init__()
-        
+
         # Ensure the input x is a numpy matrix/array
         if isinstance(x, pd.DataFrame):
             x = x.to_records(index=False)
@@ -75,7 +79,7 @@ class Cart(object):
             
         # if y is a string or function, compute the actual response value
         # otherwise, ensure y is a numpy matrix/array
-        if isinstance(y, str):
+        if isinstance(y, six.string_types):
             key = y
             y = x[key]
             
@@ -83,7 +87,7 @@ class Cart(object):
                 exclude = list(exclude) + [key]
             else:
                 exclude = [key]
-        elif callable(y):
+        elif six.callable(y):
             fun = y
             y = np.apply_along_axis(fun, 0, x)
         elif isinstance(y, pd.DataFrame) or isinstance(y, pd.Series):
@@ -94,22 +98,22 @@ class Cart(object):
             y = np.asarray(y)
             
         # convert include/exclude arguments to lists if they are strings
-        if include and isinstance(include, str):
+        if include and isinstance(include, six.string_types):
             include = [include]
             
-        if exclude and isinstance(exclude, str):
+        if exclude and isinstance(exclude, six.string_types):
             exclude = [exclude]     
             
         # include or exclude columns from the analysis
         if include:
-            if isinstance(include, str):
+            if isinstance(include, six.string_types):
                 include = [include]
 
             drop_names = set(rf.get_names(x.dtype))-set(include)
             x = rf.drop_fields(x, drop_names, asrecarray=True)
         
         if exclude:
-            if isinstance(exclude, str):
+            if isinstance(exclude, six.string_types):
                 exclude = [exclude]
 
             drop_names = set(exclude) 
@@ -117,7 +121,7 @@ class Cart(object):
             
         # apply the threshold if 
         if threshold:
-            if callable(threshold):
+            if six.callable(threshold):
                 y = np.apply_along_axis(threshold, 0, y)
             else:
                 # The syntax for threshold_type is "x <op> <threshold>", e.g.,
@@ -192,14 +196,17 @@ class Cart(object):
         return self._to_string()
         
     def print_tree(self, coi=None, all=True, **kwargs):
-        print(self._to_string(coi, all, **kwargs))
+        #print(self._to_string(coi, all, **kwargs)) GAMMAL RAD. NYA RADER:
+        results, node_list = self._to_string(coi, all, **kwargs)
+        print(results) 
+        return node_list #
     
     def _to_string(self, coi=None, all=True, **kwargs):
         result = ""
         clf = self._clf
         feature_names, class_names = self._get_names(**kwargs)
         
-        if not hasattr(coi, "__iter__") and not isinstance(coi, str):
+        if not hasattr(coi, "__iter__") and not isinstance(coi, six.string_types):
             coi = [coi]
         
         left      = clf.tree_.children_left
@@ -231,8 +238,10 @@ class Cart(object):
                 return lineage
             else:
                 return recurse(left, right, parent, lineage)
-    
+        #Rekursivt anrop är här klart!
+        child_list = [] #
         for child in idx:
+            child_dict = {} #
             if coi is None or classes[child] in coi:
                 if len(result) > 0:
                     result += "\n"
@@ -245,11 +254,21 @@ class Cart(object):
                     density = ncoi/np.sum(value)
                     coverage = ncoi/sum([1 if yi in coi else 0 for yi in self._y])
                     result += "    Density: %.2f%%\n" % (100*density,)
-                    result += "    Coverage: %.2f%%\n" % (100*coverage,)
-                
-                result += "    Rule: " + " and\n          ".join(self._collapse_bounds(recurse(left, right, child), feature_names))
-                
-        return result
+                    result += "    Coverage: %.2f%%\n" % (100*coverage,)  
+                #result += "    Rule: " + " and\n          ".join(self._collapse_bounds(recurse(left, right, child), feature_names))   
+                #^Gammal kodrad. Nya kodrader:
+                rules_vec = self._collapse_bounds(recurse(left, right, child), feature_names) #
+                child_dict["Rules"] = rules_vec #
+                result += "    Rule: " + " and\n          ".join(rules_vec) #
+
+                #Lägg till alla andra nodattribut:
+                child_dict["Node"]      = str(child)
+                child_dict["Class"]     = str(classes[child])
+                child_dict["Density"]   = str(100*density)
+                child_dict["Coverage"]  = str(100*coverage)
+                child_list.append(child_dict)    #
+
+        return result, child_list #
                 
     def _collapse_bounds(self, rules, keys):
         bounds = {}
